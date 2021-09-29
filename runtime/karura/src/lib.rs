@@ -1431,6 +1431,11 @@ parameter_types! {
 		// VSKSM:KSM = 1:1
 		ksm_per_second()
 	);
+	pub KusdPerSecond: (MultiLocation, u128) = (
+		native_currency_location(KUSD),
+		// KUSD:KSM = 1:1
+		ksm_per_second()
+	);
 }
 /// TODO: this is a temp solution for multi traders, should be replaced after tuple impl is
 /// available https://github.com/paritytech/polkadot/pull/3601
@@ -1440,19 +1445,21 @@ parameter_types! {
 /// 2. Add a new trader field.
 /// 3. Call this new trader type's new/buy_weight/refund functions in `WeightTrader` impl,
 ///   like the way of `KsmTrader`.
-pub struct MultiWeightTraders<KsmTrader, BncTrader, VsksmTrader> {
+pub struct MultiWeightTraders<KsmTrader, BncTrader, VsksmTrader, KusdTrader> {
 	ksm_trader: KsmTrader,
 	bnc_trader: BncTrader,
 	vsksm_trader: VsksmTrader,
+	kusd_trader: KusdTrader,
 }
-impl<KsmTrader: WeightTrader, BncTrader: WeightTrader, VsksmTrader: WeightTrader> WeightTrader
-	for MultiWeightTraders<KsmTrader, BncTrader, VsksmTrader>
+impl<KsmTrader: WeightTrader, BncTrader: WeightTrader, VsksmTrader: WeightTrader, KusdTrader: WeightTrader> WeightTrader
+	for MultiWeightTraders<KsmTrader, BncTrader, VsksmTrader, KusdTrader>
 {
 	fn new() -> Self {
 		Self {
 			ksm_trader: KsmTrader::new(),
 			bnc_trader: BncTrader::new(),
 			vsksm_trader: VsksmTrader::new(),
+			kusd_trader: KusdTrader::new(),
 			// dummy_trader: DummyTrader::new(),
 		}
 	}
@@ -1465,7 +1472,11 @@ impl<KsmTrader: WeightTrader, BncTrader: WeightTrader, VsksmTrader: WeightTrader
 			return Ok(assets);
 		}
 
-		if let Ok(assets) = self.vsksm_trader.buy_weight(weight, payment) {
+		if let Ok(assets) = self.vsksm_trader.buy_weight(weight, payment.clone()) {
+			return Ok(assets);
+		}
+
+		if let Ok(assets) = self.kusd_trader.buy_weight(weight, payment) {
 			return Ok(assets);
 		}
 
@@ -1493,6 +1504,11 @@ impl<KsmTrader: WeightTrader, BncTrader: WeightTrader, VsksmTrader: WeightTrader
 			MultiAsset::ConcreteFungible { amount, .. } if !amount.is_zero() => return vsksm,
 			_ => {}
 		}
+		let kusd = self.kusd_trader.refund_weight(weight);
+		match kusd {
+			MultiAsset::ConcreteFungible { amount, .. } if !amount.is_zero() => return kusd,
+			_ => {}
+		}
 
 		// let dummy = self.dummy_trader.refund_weight(weight);
 		// match dummy {
@@ -1508,6 +1524,7 @@ pub type Trader = MultiWeightTraders<
 	FixedRateOfConcreteFungible<KsmPerSecond, ToTreasury>,
 	FixedRateOfConcreteFungible<BncPerSecond, ToTreasury>,
 	FixedRateOfConcreteFungible<VsksmPerSecond, ToTreasury>,
+	FixedRateOfConcreteFungible<KusdPerSecond, ToTreasury>,
 >;
 
 pub struct XcmConfig;
